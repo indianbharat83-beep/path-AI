@@ -26,7 +26,8 @@ def analyze_image(pil_img):
     thresh = mean + 0.5 * std
     mask = (arr > thresh).astype(np.uint8) * 255
 
-    # Create heatmap overlay
+    # Create heatmap overlay using matplotlib (headless Agg backend)
+    plt.figure(figsize=(8,6))
     plt.imshow(arr, cmap='gray')
     plt.imshow(mask, cmap='jet', alpha=0.4)
     plt.axis('off')
@@ -57,7 +58,12 @@ Notes:
     return report
 
 if uploaded:
-    pil_img = Image.open(uploaded).convert('RGB')
+    try:
+        pil_img = Image.open(uploaded).convert('RGB')
+    except Exception as e:
+        st.error(f"Unable to open uploaded file: {e}")
+        st.stop()
+
     st.subheader('Original Image')
     st.image(pil_img, use_column_width=True)
 
