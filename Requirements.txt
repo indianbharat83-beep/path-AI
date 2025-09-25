@@ -1,4 +1,3 @@
 streamlit
 pillow
 numpy
-matplotlib==3.7.2
