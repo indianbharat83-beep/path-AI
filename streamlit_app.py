@@ -3,11 +3,6 @@ from PIL import Image, ImageOps
 import numpy as np
 import io
 
-# Force matplotlib to use a backend suitable for cloud/server environments
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 st.set_page_config(page_title='PathAI Demo MVP', layout='centered')
 
 st.title('Pathology Diagnostic Support — Demo MVP')
@@ -15,29 +10,39 @@ st.write('Upload a pathology slide image. The app highlights suspicious regions 
 
 uploaded = st.file_uploader('Upload a pathology slide image (PNG/JPG)', type=['png', 'jpg', 'jpeg'])
 
-def analyze_image(pil_img):
-    # Convert to grayscale and normalize
+def analyze_image_no_matplotlib(pil_img):
+    # Convert to grayscale numpy array
     gray = ImageOps.grayscale(pil_img)
     arr = np.array(gray).astype(float)
 
-    # Simple heuristic: areas brighter than mean + 0.5*std considered suspicious
+    # Heuristic: pixels brighter than mean + 0.5*std flagged as suspicious
     mean = arr.mean()
     std = arr.std()
     thresh = mean + 0.5 * std
-    mask = (arr > thresh).astype(np.uint8) * 255
+    mask = (arr > thresh).astype(np.uint8)  # 0 or 1 mask
 
-    # Create heatmap overlay using matplotlib (headless Agg backend)
-    plt.figure(figsize=(8,6))
-    plt.imshow(arr, cmap='gray')
-    plt.imshow(mask, cmap='jet', alpha=0.4)
-    plt.axis('off')
-    buf = io.BytesIO()
-    plt.savefig(buf, bbox_inches='tight', pad_inches=0)
-    buf.seek(0)
-    plt.close()
-    heatmap = Image.open(buf).convert('RGB')
+    # Create overlay image (red tint) from mask with soft alpha
+    # Normalize mask to 0..255 alpha
+    alpha = (mask * 180).astype(np.uint8)  # 0..180 alpha for overlay
+    # Create RGBA overlay: red color where mask==1
+    overlay = np.zeros((arr.shape[0], arr.shape[1], 4), dtype=np.uint8)
+    overlay[..., 0] = 255          # Red channel
+    overlay[..., 3] = alpha       # Alpha channel
 
-    return mask, heatmap, mean, std
+    # Convert base grayscale to RGB
+    base_rgb = np.stack([arr, arr, arr], axis=-1).astype(np.uint8)
+    base_img = Image.fromarray(base_rgb, mode='RGB')
+
+    overlay_img = Image.fromarray(overlay, mode='RGBA')
+
+    # Composite overlay on base image
+    composed = Image.alpha_composite(base_img.convert('RGBA'), overlay_img).convert('RGB')
+
+    # Also produce a simple binary mask image for preview
+    mask_img = (mask * 255).astype(np.uint8)
+    mask_pil = Image.fromarray(mask_img).convert('RGB')
+
+    return mask, composed, mean, std, mask_pil
 
 def generate_report(mean, std, mask):
     suspicious_pct = (mask > 0).mean() * 100
@@ -68,13 +73,13 @@ if uploaded:
     st.image(pil_img, use_column_width=True)
 
     with st.spinner('AI analyzing... (demo heuristic)'):
-        mask, heatmap, mean, std = analyze_image(pil_img)
+        mask, heatmap, mean, std, mask_preview = analyze_image_no_matplotlib(pil_img)
 
     st.subheader('AI Heatmap Overlay (demo)')
     st.image(heatmap, use_column_width=True)
 
     st.subheader('Detected Mask Preview')
-    st.image(Image.fromarray(mask).convert('RGB'), use_column_width=True)
+    st.image(mask_preview, use_column_width=True)
 
     report = generate_report(mean, std, mask)
     st.subheader('Draft Report')
